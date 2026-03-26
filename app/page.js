@@ -1,53 +1,85 @@
 "use client";
+
 import { useState } from "react";
+import { marked } from "marked";
+import "./globals.css";
 
 export default function Home() {
   const [message, setMessage] = useState("");
   const [chat, setChat] = useState([]);
+  const [loading, setLoading] = useState(false);
 
   const sendMessage = async () => {
-    if (!message) return;
+    if (!message.trim()) return;
 
     const userMsg = { role: "user", text: message };
-    setChat([...chat, userMsg]);
-
-    const res = await fetch("https://mcp-python-app-production.up.railway.app/chat", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ user_input: message }),
-    });
-
-    const data = await res.json();
-
-    const botMsg = {
-      role: "bot",
-      text: JSON.stringify(data),
-    };
-
-    setChat((prev) => [...prev, botMsg]);
+    setChat((prev) => [...prev, userMsg]);
     setMessage("");
+    setLoading(true);
+
+    try {
+      const res = await fetch(
+        "https://mcp-python-app-production.up.railway.app/chat",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ user_input: message }),
+        }
+      );
+
+      const data = await res.json();
+
+      const botMsg = {
+        role: "bot",
+        text: data.answer || "No response",
+      };
+
+      setChat((prev) => [...prev, botMsg]);
+    } catch (err) {
+      setChat((prev) => [
+        ...prev,
+        { role: "bot", text: "⚠️ Error connecting to server" },
+      ]);
+    }
+
+    setLoading(false);
   };
 
   return (
-    <div style={{ padding: "20px" }}>
-      <h1>AI DB Assistant</h1>
+    <div className="container">
+      <div className="header">🤖 AI DB Assistant</div>
 
-      <div style={{ marginBottom: "20px" }}>
+      <div className="chat">
         {chat.map((msg, i) => (
-          <div key={i}>
-            <b>{msg.role}:</b> {msg.text}
+          <div
+            key={i}
+            className={`message ${msg.role === "user" ? "user" : "bot"}`}
+          >
+            <div
+              dangerouslySetInnerHTML={{
+                __html: marked(msg.text),
+              }}
+            />
           </div>
         ))}
+
+        {loading && (
+          <div className="message bot">Typing...</div>
+        )}
       </div>
 
-      <input
-        value={message}
-        onChange={(e) => setMessage(e.target.value)}
-        placeholder="Ask something..."
-      />
-      <button onClick={sendMessage}>Send</button>
+      <div className="inputBox">
+        <input
+          className="input"
+          value={message}
+          onChange={(e) => setMessage(e.target.value)}
+          placeholder="Ask something..."
+          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+        />
+        <button className="button" onClick={sendMessage}>
+          Send
+        </button>
+      </div>
     </div>
   );
 }
