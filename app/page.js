@@ -1,19 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { marked } from "marked";
 import "./globals.css";
 
 export default function Home() {
   const [message, setMessage] = useState("");
-  const [chat, setChat] = useState([]);
+  const [chats, setChats] = useState([
+    { id: 1, messages: [] }
+  ]);
+  const [activeChat, setActiveChat] = useState(0);
   const [loading, setLoading] = useState(false);
+
+  const chatEndRef = useRef(null);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [chats]);
 
   const sendMessage = async () => {
     if (!message.trim()) return;
 
-    const userMsg = { role: "user", text: message };
-    setChat((prev) => [...prev, userMsg]);
+    const updatedChats = [...chats];
+    updatedChats[activeChat].messages.push({
+      role: "user",
+      text: message,
+    });
+
+    setChats(updatedChats);
     setMessage("");
     setLoading(true);
 
@@ -29,56 +43,121 @@ export default function Home() {
 
       const data = await res.json();
 
-      const botMsg = {
-        role: "bot",
-        text: data.answer || "No response",
-      };
+      // 🔥 Streaming-like effect
+      let text = data.answer || "No response";
+      let current = "";
 
-      setChat((prev) => [...prev, botMsg]);
+      for (let i = 0; i < text.length; i++) {
+        current += text[i];
+
+        updatedChats[activeChat].messages = [
+          ...updatedChats[activeChat].messages.filter(m => m.role !== "typing"),
+          { role: "typing", text: current }
+        ];
+
+        setChats([...updatedChats]);
+        await new Promise(r => setTimeout(r, 10));
+      }
+
+      updatedChats[activeChat].messages.pop();
+
+      updatedChats[activeChat].messages.push({
+        role: "bot",
+        text: text,
+        tool: data.tool_used,
+      });
+
+      setChats([...updatedChats]);
+
     } catch (err) {
-      setChat((prev) => [
-        ...prev,
-        { role: "bot", text: "⚠️ Error connecting to server" },
-      ]);
+      updatedChats[activeChat].messages.push({
+        role: "bot",
+        text: "⚠️ Error connecting to server",
+      });
+      setChats([...updatedChats]);
     }
 
     setLoading(false);
   };
 
-  return (
-    <div className="container">
-      <div className="header">🤖 AI DB Assistant</div>
+  const newChat = () => {
+    setChats([...chats, { id: Date.now(), messages: [] }]);
+    setActiveChat(chats.length);
+  };
 
-      <div className="chat">
-        {chat.map((msg, i) => (
+  const currentMessages = chats[activeChat].messages;
+
+  return (
+    <div className="app">
+
+      {/* Sidebar */}
+      <div className="sidebar">
+        <button className="newChat" onClick={newChat}>
+          + New Chat
+        </button>
+
+        {chats.map((chat, i) => (
           <div
-            key={i}
-            className={`message ${msg.role === "user" ? "user" : "bot"}`}
+            key={chat.id}
+            className="chatItem"
+            onClick={() => setActiveChat(i)}
           >
-            <div
-              dangerouslySetInnerHTML={{
-                __html: marked(msg.text),
-              }}
-            />
+            Chat {i + 1}
           </div>
         ))}
-
-        {loading && (
-          <div className="message bot">Typing...</div>
-        )}
       </div>
 
-      <div className="inputBox">
-        <input
-          className="input"
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Ask something..."
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-        />
-        <button className="button" onClick={sendMessage}>
-          Send
-        </button>
+      {/* Main */}
+      <div className="main">
+        <div className="header">🤖 AI DB Assistant</div>
+
+        <div className="chat">
+          {currentMessages.map((msg, i) => (
+            <div
+              key={i}
+              className={`message ${
+                msg.role === "user"
+                  ? "user"
+                  : msg.role === "bot"
+                  ? "bot"
+                  : "bot"
+              }`}
+            >
+              <div
+                dangerouslySetInnerHTML={{
+                  __html: marked(msg.text),
+                }}
+              />
+
+              {msg.tool && (
+                <div className="tool">⚙️ Used: {msg.tool}</div>
+              )}
+            </div>
+          ))}
+
+          {loading && (
+            <div className="message bot typing">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+          )}
+
+          <div ref={chatEndRef} />
+        </div>
+
+        <div className="inputBox">
+          <input
+            className="input"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Ask anything..."
+            onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+          />
+          <button className="button" onClick={sendMessage}>
+            Send
+          </button>
+        </div>
       </div>
     </div>
   );
